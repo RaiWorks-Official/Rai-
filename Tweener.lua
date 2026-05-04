@@ -1,36 +1,61 @@
 local Module = {
-    TweenService = game:GetService("TweenService")
+	TweenService = game:GetService("TweenService"),
+	RunService   = game:GetService("RunService"),
 }
 
-function Module:TweenTo(obj, prop, speed, ...)
-    local Root = obj:WaitForChild("HumanoidRootPart")
+function Module:TweenTo(obj, target, speed, easingStyle, easingDir)
+	local hum  = obj:FindFirstChildOfClass("Humanoid")
+	local root = obj:WaitForChild("HumanoidRootPart")
 
-    local Dist = (Root.Position - prop.Position).Magnitude
-    speed = math.max(speed, 0.01)
-    local Overall = Dist / speed
+	speed       = math.max(speed or 50, 0.01)
+	easingStyle = easingStyle or Enum.EasingStyle.Sine
+	easingDir   = easingDir   or Enum.EasingDirection.InOut
 
-    local info = TweenInfo.new(Overall, ...)
+	local targetCF = typeof(target) == "CFrame" and target
+		or (target:IsA("BasePart") and target.CFrame)
+		or CFrame.new(target.Position)
 
-    local goal = {
-        CFrame = prop.CFrame
-    }
+	local dist     = (root.Position - targetCF.Position).Magnitude
+	local duration = math.max(dist / speed, 0.01)
+	local elapsed  = 0
+	local startCF  = root.CFrame
+	local conn
 
-    local Tween = self.TweenService:Create(Root, info, goal)
+	local PState
+	if hum then
+		PState = hum:GetState()
+		hum:ChangeState(Enum.HumanoidStateType.Physics)
+	end
 
-    local Ins = {
-        Tween = Tween
-    }
+	local ins = { _active = true }
 
-    function Ins:Stop()
-        if self.Tween then
-            self.Tween:Cancel()
-            self.Tween = nil
-        end
-    end
+	function ins:Stop()
+		if not self._active then return end
+		self._active = false
+		if conn then conn:Disconnect() end
+		if hum and PState then
+			hum:ChangeState(PState)
+		end
+	end
 
-    Tween:Play()
+	conn = Module.RunService.Heartbeat:Connect(function(dt)
+		if not ins._active then
+			conn:Disconnect()
+			return
+		end
 
-    return Ins, Tween
+		local cur = typeof(target) == "CFrame" and target
+			or (target and target.Parent and target:IsA("BasePart") and target.CFrame)
+			or targetCF
+
+		elapsed = elapsed + dt
+		local alpha = math.clamp(elapsed / duration, 0, 1)
+		root.CFrame = startCF:Lerp(cur, Module.TweenService:GetValue(alpha, easingStyle, easingDir))
+
+		if alpha >= 1 then ins:Stop() end
+	end)
+
+	return ins
 end
 
 return Module
